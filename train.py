@@ -1,1 +1,3 @@
-# Training logic will go here
+print("Training script running...")
+
+# Your actual code here
