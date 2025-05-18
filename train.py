@@ -1,3 +1,4 @@
+print("
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -29,4 +30,6 @@ for epoch in range(10):
     print(f"Epoch {epoch+1} Loss: {running_loss / len(train_loader):.4f}")
 
 torch.save(model.state_dict(), "protopnet_dermamnist.pth")
+#HARSHAA
+      ")
 
