@@ -1,4 +1,3 @@
-print("
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -31,4 +30,3 @@ for epoch in range(10):
 
 torch.save(model.state_dict(), "protopnet_dermamnist.pth")
 #SPOORTHI
-      ")
