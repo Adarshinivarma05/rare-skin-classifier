@@ -7,7 +7,7 @@ model = ProtoPNet().to(device)
 model.load_state_dict(torch.load("protopnet_dermamnist.pth"))
 model.eval()
 
-_, test_loader = get_dataloaders()
+_, _, test_loader = get_dataloaders()
 
 correct = 0
 total = 0
@@ -20,4 +20,3 @@ with torch.no_grad():
         total += labels.size(0)
 
 print(f"Test Accuracy: {100 * correct / total:.2f}%")
-
