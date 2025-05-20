@@ -3,41 +3,45 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from models.protopnet_skin_classifier import ProtoPSkinClassifier
-from utils.data_loader import get_dataloaders
+from utils.data_loader import get_data_loaders
 import os
-import copy
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def train():
-    # 🧠 Model
-    model = ProtoPSkinClassifier(num_prototypes=70, num_classes=7).to(device)
+    # Hyperparameters
+    data_dir = 'data/skin_images'
+    batch_size = 32
+    num_epochs = 50
+    learning_rate = 0.001
+    patience = 6
+    num_prototypes = 70
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # 📦 Data
-    train_loader, val_loader, _ = get_dataloaders()
+    # Data loaders
+    train_loader, val_loader, class_names = get_data_loaders(data_dir, batch_size=batch_size)
+    num_classes = len(class_names)
 
-    # ⚙️ Loss and optimizer
+    # Model
+    model = ProtoPSkinClassifier(num_classes=num_classes, num_prototypes=num_prototypes)
+    model = model.to(device)
+
+    # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-    # 🛑 Early stopping
-    early_stop_patience = 5
+    # Training loop with early stopping
     best_val_acc = 0.0
-    best_model_wts = copy.deepcopy(model.state_dict())
     epochs_no_improve = 0
-
-    # 📁 Checkpoint directory
-    os.makedirs("checkpoints", exist_ok=True)
+    best_model_path = 'best_model.pt'
 
     print("🔁 Starting training...")
-    for epoch in range(1, 51):
+
+    for epoch in range(num_epochs):
         model.train()
-        train_loss, correct, total = 0.0, 0, 0
+        running_loss, correct, total = 0.0, 0, 0
 
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
-            labels = labels.squeeze().long()  # 🔧 FIXED
 
             optimizer.zero_grad()
             outputs = model(images)
@@ -45,50 +49,50 @@ def train():
             loss.backward()
             optimizer.step()
 
-            train_loss += loss.item() * images.size(0)
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == labels).sum().item()
+            running_loss += loss.item() * images.size(0)
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
             total += labels.size(0)
 
-        train_loss /= total
-        train_acc = 100 * correct / total
+        train_loss = running_loss / total
+        train_acc = correct / total * 100
 
         # Validation
         model.eval()
-        val_loss, correct, total = 0.0, 0, 0
+        val_loss, val_correct, val_total = 0.0, 0, 0
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
-                labels = labels.squeeze().long()  # 🔧 FIXED
-
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
                 val_loss += loss.item() * images.size(0)
-                _, predicted = torch.max(outputs, 1)
-                correct += (predicted == labels).sum().item()
-                total += labels.size(0)
+                _, preds = torch.max(outputs, 1)
+                val_correct += (preds == labels).sum().item()
+                val_total += labels.size(0)
 
-        val_loss /= total
-        val_acc = 100 * correct / total
+        val_loss /= val_total
+        val_acc = val_correct / val_total * 100
 
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch}/50 | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
 
+        # Save best model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            best_model_wts = copy.deepcopy(model.state_dict())
-            torch.save(best_model_wts, "checkpoints/best_model.pth")
+            torch.save(model.state_dict(), best_model_path)
             print("✅ Best model saved.")
             epochs_no_improve = 0
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= early_stop_patience:
-                print("⏹️ Early stopping triggered.")
-                break
+
+        # Early stopping
+        if epochs_no_improve >= patience:
+            print("⏹️ Early stopping triggered.")
+            break
 
     print(f"\n🏁 Training complete. Best Val Accuracy: {best_val_acc:.2f}%")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     train()
