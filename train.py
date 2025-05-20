@@ -12,8 +12,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
 
-train_loader, val_loader = get_dataloaders(batch_size=64)
-
+train_loader, val_loader, test_loader = get_dataloaders(batch_size=64)
 best_val_loss = float('inf')
 early_stop_counter = 0
 early_stop_patience = 7
