@@ -10,24 +10,34 @@ import os
 # Setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = ProtoPNet(num_prototypes_per_class=10).to(device)
-
 train_loader, val_loader, test_loader = get_dataloaders()
 
-criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # label smoothing
+criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
 writer = SummaryWriter(log_dir='runs/ProtoPNet_Training')
 
 # Checkpointing setup
-best_val_acc = 0.0
-patience = 7
-counter = 0
 checkpoint_path = 'checkpoints/best_model.pth'
 os.makedirs("checkpoints", exist_ok=True)
 
-# Training
-for epoch in range(50):
+best_val_acc = 0.0
+start_epoch = 0
+patience = 7
+counter = 0
+
+# Resume from checkpoint if available
+if os.path.exists(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    best_val_acc = checkpoint['best_val_acc']
+    start_epoch = checkpoint['epoch'] + 1
+    print(f"🔁 Resumed from epoch {start_epoch} with best val acc: {best_val_acc:.2f}%")
+
+# Training loop
+for epoch in range(start_epoch, 50):
     model.train()
     running_loss = 0.0
     correct = 0
@@ -68,7 +78,6 @@ for epoch in range(50):
 
     val_epoch_loss = val_loss / len(val_loader)
     val_epoch_acc = 100. * val_correct / val_total
-
     scheduler.step(val_epoch_loss)
 
     print(f"Epoch {epoch+1}/50 | Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.2f}% | Val Loss: {val_epoch_loss:.4f}, Val Acc: {val_epoch_acc:.2f}%")
@@ -81,7 +90,12 @@ for epoch in range(50):
     # Save best model
     if val_epoch_acc > best_val_acc:
         best_val_acc = val_epoch_acc
-        torch.save(model.state_dict(), checkpoint_path)
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val_acc': best_val_acc
+        }, checkpoint_path)
         print("✅ Best model saved.")
         counter = 0
     else:
@@ -94,4 +108,4 @@ for epoch in range(50):
 writer.close()
 print(f"🏁 Final Best Val Accuracy: {best_val_acc:.2f}%")
 
-#Harsha 3.0
+# Harsha 4.0 🚀
