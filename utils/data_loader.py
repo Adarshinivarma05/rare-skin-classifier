@@ -1,4 +1,4 @@
-print("
+
 from medmnist import INFO, DermaMNIST
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split
@@ -31,5 +31,5 @@ def get_dataloaders(batch_size=64, val_split=0.1):
 
 #HARSHAA 2.0 
       
-      ")
+    
 
