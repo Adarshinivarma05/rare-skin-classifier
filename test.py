@@ -1,38 +1,29 @@
 import torch
-from models.protopnet_skin_classifier import ProtoPSkinClassifier
+import torch.nn as nn
 from utils.data_loader import get_data_loaders
+from models.protopnet_skin_classifier import ProtoPSkinClassifier
 
 def test():
-    # Setup
-    data_dir = 'data/skin_images'
-    batch_size = 32
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Load data
-    _, val_loader, class_names = get_data_loaders(data_dir, batch_size=batch_size)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _, _, test_loader, class_names = get_data_loaders()
     num_classes = len(class_names)
-    num_prototypes = 70
 
-    # Load model
-    model = ProtoPSkinClassifier(num_classes=num_classes, num_prototypes=num_prototypes)
-    model.load_state_dict(torch.load('best_model.pt', map_location=device))
-    model = model.to(device)
+    model = ProtoPSkinClassifier(num_classes=num_classes).to(device)
+    model.load_state_dict(torch.load("best_model.pth", map_location=device))
     model.eval()
 
-    # Evaluation
     correct = 0
     total = 0
 
     with torch.no_grad():
-        for images, labels in val_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.squeeze().long().to(device)
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    accuracy = 100 * correct / total
-    print(f"✅ Test Accuracy: {accuracy:.2f}%")
+    print(f"✅ Test Accuracy: {100 * correct / total:.2f}%")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test()
