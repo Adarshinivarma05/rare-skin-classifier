@@ -1,41 +1,38 @@
 import torch
-from utils.data_loader import get_dataloaders
 from models.protopnet_skin_classifier import ProtoPSkinClassifier
-import torch.nn.functional as F
+from utils.data_loader import get_data_loaders
 
-# Device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def test():
+    # Setup
+    data_dir = 'data/skin_images'
+    batch_size = 32
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Load data
-_, _, test_loader = get_dataloaders(batch_size=64)
+    # Load data
+    _, val_loader, class_names = get_data_loaders(data_dir, batch_size=batch_size)
+    num_classes = len(class_names)
+    num_prototypes = 70
 
-# Load model
-model = ProtoPSkinClassifier(num_prototypes=70, num_classes=7)
-model.load_state_dict(torch.load("best_model.pth", map_location=device))
-model.to(device)
-model.eval()
+    # Load model
+    model = ProtoPSkinClassifier(num_classes=num_classes, num_prototypes=num_prototypes)
+    model.load_state_dict(torch.load('best_model.pt', map_location=device))
+    model = model.to(device)
+    model.eval()
 
-# Evaluation
-correct, total = 0, 0
-all_preds, all_labels = [], []
+    # Evaluation
+    correct = 0
+    total = 0
 
-with torch.no_grad():
-    for inputs, labels in test_loader:
-        inputs, labels = inputs.to(device), labels.to(device)
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-        # Fix label shape
-        labels = labels.squeeze()
-        if labels.ndim > 1:
-            labels = labels.argmax(dim=1)
+    accuracy = 100 * correct / total
+    print(f"✅ Test Accuracy: {accuracy:.2f}%")
 
-        outputs = model(inputs)
-        _, predicted = outputs.max(1)
-
-        total += labels.size(0)
-        correct += predicted.eq(labels).sum().item()
-
-        all_preds.extend(predicted.cpu().tolist())
-        all_labels.extend(labels.cpu().tolist())
-
-accuracy = 100.0 * correct / total
-print(f"\n✅ Test Accuracy: {accuracy:.2f}%")
+if __name__ == '__main__':
+    test()

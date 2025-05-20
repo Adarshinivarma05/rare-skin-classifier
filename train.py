@@ -1,38 +1,49 @@
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from utils.data_loader import get_dataloaders
 from models.protopnet_skin_classifier import ProtoPSkinClassifier
-import copy
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from utils.data_loader import get_data_loaders
+import os
 
 def train():
-    train_loader, val_loader, test_loader = get_dataloaders(batch_size=64)
+    # Hyperparameters
+    data_dir = 'data/skin_images'
+    batch_size = 32
+    num_epochs = 50
+    learning_rate = 0.001
+    patience = 6
+    num_prototypes = 70
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = ProtoPSkinClassifier(num_prototypes=70, num_classes=7).to(device)
+    # Data loaders
+    train_loader, val_loader, class_names = get_data_loaders(data_dir, batch_size=batch_size)
+    num_classes = len(class_names)
+
+    # Model
+    model = ProtoPSkinClassifier(num_classes=num_classes, num_prototypes=num_prototypes)
+    model = model.to(device)
+
+    # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-    best_val_acc = 0
-    best_model_wts = copy.deepcopy(model.state_dict())
-    patience = 5
-    counter = 0
+    # Training loop with early stopping
+    best_val_acc = 0.0
+    epochs_no_improve = 0
+    best_model_path = 'best_model.pt'
 
-    num_epochs = 50
+    print("🔁 Starting training...")
+
     for epoch in range(num_epochs):
         model.train()
-        running_loss = 0
-        correct = 0
-        total = 0
+        running_loss, correct, total = 0.0, 0, 0
 
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
 
+            optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
             loss.backward()
@@ -46,15 +57,15 @@ def train():
         train_loss = running_loss / total
         train_acc = correct / total * 100
 
+        # Validation
         model.eval()
-        val_loss = 0
-        val_correct = 0
-        val_total = 0
+        val_loss, val_correct, val_total = 0.0, 0, 0
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
                 loss = criterion(outputs, labels)
+
                 val_loss += loss.item() * images.size(0)
                 _, preds = torch.max(outputs, 1)
                 val_correct += (preds == labels).sum().item()
@@ -65,27 +76,23 @@ def train():
 
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1}/{num_epochs} | "
-              f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | "
-              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
 
-        # Early stopping logic
+        # Save best model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            best_model_wts = copy.deepcopy(model.state_dict())
-            torch.save(model.state_dict(), 'best_model.pth')
+            torch.save(model.state_dict(), best_model_path)
             print("✅ Best model saved.")
-            counter = 0
+            epochs_no_improve = 0
         else:
-            counter += 1
-            if counter >= patience:
-                print("⏹️ Early stopping triggered.")
-                break
+            epochs_no_improve += 1
 
-    print(f"🏁 Training complete. Best Val Accuracy: {best_val_acc:.2f}%")
-    model.load_state_dict(best_model_wts)
+        # Early stopping
+        if epochs_no_improve >= patience:
+            print("⏹️ Early stopping triggered.")
+            break
 
-    # You can add test evaluation here if needed
+    print(f"\n🏁 Training complete. Best Val Accuracy: {best_val_acc:.2f}%")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     train()
