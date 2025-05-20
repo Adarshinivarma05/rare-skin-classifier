@@ -8,7 +8,7 @@ from utils.train_utils import EarlyStopping, save_checkpoint
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = ProtoPNet().to(device)
 
-train_loader, val_loader = get_dataloaders()
+train_loader, val_loader, test_loader = get_dataloaders()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, verbose=True)
