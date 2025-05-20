@@ -1,35 +1,35 @@
-from medmnist import INFO, DermaMNIST
-from torchvision import transforms
-from torch.utils.data import DataLoader, random_split
 import torch
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, random_split
 
-def get_dataloaders(batch_size=64, val_split=0.1, seed=42, shuffle=True, image_size=224):
-    info = INFO['dermamnist']
-    DataClass = DermaMNIST
-
-    transform = transforms.Compose([
+def get_dataloaders(batch_size=64, val_split=0.2):
+    # Data augmentations for train set
+    train_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
         transforms.ToTensor(),
-        transforms.Resize((image_size, image_size)),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # RGB
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet normalization
+                             std=[0.229, 0.224, 0.225]),
     ])
 
-    # Load datasets
-    full_train_dataset = DataClass(split='train', transform=transform, download=True)
-    test_dataset = DataClass(split='test', transform=transform, download=True)
+    val_transforms = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
-    # Train/Validation split
-    total_train = len(full_train_dataset)
-    val_size = int(val_split * total_train)
-    train_size = total_train - val_size
+    full_dataset = datasets.ImageFolder('data/train', transform=train_transforms)
+    val_size = int(len(full_dataset) * val_split)
+    train_size = len(full_dataset) - val_size
 
-    generator = torch.Generator().manual_seed(seed)
-    train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size], generator=generator)
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+    val_dataset.dataset.transform = val_transforms  # change val transforms
 
-    # DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
 
-    return train_loader, val_loader, test_loader
-
-# HARSHAA 4.0 🚀
+    return train_loader, val_loader
