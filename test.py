@@ -1,40 +1,38 @@
 import torch
-import torch.nn as nn
 from models.protopnet_skin_classifier import ProtoPSkinClassifier
-from utils.data_loader import get_dataloaders
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from utils.data_loader import get_data_loaders
 
 def test():
-    # 🧠 Load model
-    model = ProtoPSkinClassifier(num_prototypes=70, num_classes=7).to(device)
-    model.load_state_dict(torch.load("checkpoints/best_model.pth", map_location=device))
+    # Setup
+    data_dir = 'data/skin_images'
+    batch_size = 32
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Load data
+    _, val_loader, class_names = get_data_loaders(data_dir, batch_size=batch_size)
+    num_classes = len(class_names)
+    num_prototypes = 70
+
+    # Load model
+    model = ProtoPSkinClassifier(num_classes=num_classes, num_prototypes=num_prototypes)
+    model.load_state_dict(torch.load('best_model.pt', map_location=device))
+    model = model.to(device)
     model.eval()
 
-    # 📦 Load test data
-    _, _, test_loader = get_dataloaders()
-
-    correct, total = 0, 0
-    criterion = nn.CrossEntropyLoss()
-    test_loss = 0.0
+    # Evaluation
+    correct = 0
+    total = 0
 
     with torch.no_grad():
-        for images, labels in test_loader:
+        for images, labels in val_loader:
             images, labels = images.to(device), labels.to(device)
-            labels = labels.squeeze().long()  # 🔧 FIXED
-
             outputs = model(images)
-            loss = criterion(outputs, labels)
-
-            test_loss += loss.item() * images.size(0)
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == labels).sum().item()
+            _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-    test_loss /= total
-    test_acc = 100 * correct / total
+    accuracy = 100 * correct / total
+    print(f"✅ Test Accuracy: {accuracy:.2f}%")
 
-    print(f"✅ Test Loss: {test_loss:.4f} | Test Accuracy: {test_acc:.2f}%")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     test()
