@@ -1,20 +1,29 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+import torch.nn.functional as F
 
-class ProtoPNet(nn.Module):
-    def __init__(self, num_prototypes=70, num_classes=7):  # keep prototypes high for better representation
-        super(ProtoPNet, self).__init__()
-        self.backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        self.backbone.fc = nn.Identity()
-        
-        self.dropout = nn.Dropout(p=0.5)  # dropout layer with 50% rate
-        self.prototype_layer = nn.Linear(512, num_prototypes)
-        self.classifier = nn.Linear(num_prototypes, num_classes)
+class ProtoPSkinClassifier(nn.Module):
+    def __init__(self, num_prototypes=70, num_classes=7, prototype_dim=256):
+        super(ProtoPSkinClassifier, self).__init__()
+
+        # Pretrained ResNet18 as feature extractor
+        self.backbone = models.resnet18(pretrained=True)
+        self.backbone.fc = nn.Identity()  # Remove classification layer
+        self.feature_dim = self.backbone.fc.in_features if hasattr(self.backbone.fc, 'in_features') else 512
+
+        # Dropout for regularization
+        self.dropout = nn.Dropout(p=0.5)
+
+        # Prototypes (num_prototypes x prototype_dim)
+        self.prototype_layer = nn.Linear(self.feature_dim, num_prototypes, bias=False)
+
+        # Classification layer
+        self.last_layer = nn.Linear(num_prototypes, num_classes, bias=True)
 
     def forward(self, x):
-        features = self.backbone(x)
-        features = self.dropout(features)
-        prototype_scores = self.prototype_layer(features)
-        logits = self.classifier(prototype_scores)
+        x = self.backbone(x)
+        x = self.dropout(x)
+        proto_activations = self.prototype_layer(x)
+        logits = self.last_layer(F.relu(proto_activations))
         return logits
