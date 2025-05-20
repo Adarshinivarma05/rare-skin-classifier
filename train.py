@@ -1,4 +1,3 @@
-print("
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -73,5 +72,5 @@ writer.close()
 
 #HARSHAA 2.0 
       
-      ")
+
 
