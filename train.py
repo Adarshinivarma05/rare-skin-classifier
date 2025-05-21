@@ -1,83 +1,95 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
+from models.protopnet_skin_classifier import ProtoPNet
+from utils.data_loader import get_dataloaders
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import os
 
-from utils.data_loader import get_data_loaders
-from models.protopnet_skin_classifier import ProtoPSkinClassifier
+# Setup
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = ProtoPNet(num_prototypes_per_class=10).to(device)
 
-def train(num_epochs=50, patience=5, batch_size=64, learning_rate=0.001):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+train_loader, val_loader, test_loader = get_dataloaders()
 
-    # Load data
-    train_loader, val_loader, _, class_names = get_data_loaders(batch_size=batch_size)
-    num_classes = len(class_names)
+criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # label smoothing
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-    # Model
-    model = ProtoPSkinClassifier(num_classes=num_classes).to(device)
+writer = SummaryWriter(log_dir='runs/ProtoPNet_Training')
 
-    # Loss, optimizer, scheduler
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=2, factor=0.5)
+# Checkpointing setup
+best_val_acc = 0.0
+patience = 7
+counter = 0
+checkpoint_path = 'checkpoints/best_model.pth'
+os.makedirs("checkpoints", exist_ok=True)
 
-    best_val_acc = 0.0
-    patience_counter = 0
-    best_model_path = "best_model.pth"
+# Training
+for epoch in range(50):
+    model.train()
+    running_loss = 0.0
+    correct = 0
+    total = 0
 
-    print("🔁 Starting training...")
-    for epoch in range(num_epochs):
-        model.train()
-        running_loss, correct, total = 0.0, 0, 0
+    for images, labels in train_loader:
+        images, labels = images.to(device), labels.squeeze().long().to(device)
 
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.squeeze().long().to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        _, predicted = outputs.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().item()
+
+    epoch_loss = running_loss / len(train_loader)
+    epoch_acc = 100. * correct / total
+
+    # Validation
+    model.eval()
+    val_loss = 0.0
+    val_correct = 0
+    val_total = 0
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.squeeze().long().to(device)
+            outputs = model(images)
             loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
 
-            running_loss += loss.item() * inputs.size(0)
-            _, preds = torch.max(outputs, 1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
+            val_loss += loss.item()
+            _, predicted = outputs.max(1)
+            val_total += labels.size(0)
+            val_correct += predicted.eq(labels).sum().item()
 
-        train_loss = running_loss / total
-        train_acc = correct / total * 100
+    val_epoch_loss = val_loss / len(val_loader)
+    val_epoch_acc = 100. * val_correct / val_total
 
-        # Validation
-        model.eval()
-        val_loss, val_correct, val_total = 0.0, 0, 0
-        with torch.no_grad():
-            for inputs, labels in val_loader:
-                inputs, labels = inputs.to(device), labels.squeeze().long().to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item() * inputs.size(0)
-                _, preds = torch.max(outputs, 1)
-                val_correct += (preds == labels).sum().item()
-                val_total += labels.size(0)
+    scheduler.step(val_epoch_loss)
 
-        val_loss /= val_total
-        val_acc = val_correct / val_total * 100
-        scheduler.step(val_loss)
+    print(f"Epoch {epoch+1}/50 | Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.2f}% | Val Loss: {val_epoch_loss:.4f}, Val Acc: {val_epoch_acc:.2f}%")
 
-        print(f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}% | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+    writer.add_scalar("Loss/train", epoch_loss, epoch)
+    writer.add_scalar("Accuracy/train", epoch_acc, epoch)
+    writer.add_scalar("Loss/val", val_epoch_loss, epoch)
+    writer.add_scalar("Accuracy/val", val_epoch_acc, epoch)
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            torch.save(model.state_dict(), best_model_path)
-            print("✅ Best model saved.")
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print("⏹️ Early stopping triggered.")
-                break
+    # Save best model
+    if val_epoch_acc > best_val_acc:
+        best_val_acc = val_epoch_acc
+        torch.save(model.state_dict(), checkpoint_path)
+        print("✅ Best model saved.")
+        counter = 0
+    else:
+        counter += 1
 
-    print(f"\n🏁 Training complete. Best Val Accuracy: {best_val_acc:.2f}%")
+    if counter >= patience:
+        print("⛔ Early stopping triggered")
+        break
 
-if __name__ == "__main__":
-    train()
+writer.close()
+print(f"🏁 Final Best Val Accuracy: {best_val_acc:.2f}%")
