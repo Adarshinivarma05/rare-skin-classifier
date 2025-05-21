@@ -4,6 +4,11 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from models.protopnet_skin_classifier import ProtoPNet
 from utils.data_loader import get_dataloaders
+import os
+
+# Create checkpoints directory if it doesn't exist
+os.makedirs('checkpoints', exist_ok=True)
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = ProtoPNet().to(device)
