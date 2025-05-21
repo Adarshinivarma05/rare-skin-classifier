@@ -1,46 +1,41 @@
 import torch
-import torch.nn as nn
-import numpy as np
-from sklearn.metrics import classification_report, confusion_matrix
-from utils.data_loader import get_dataloaders
 from models.protopnet_skin_classifier import ProtoPNet
+from utils.data_loader import get_dataloaders
+from torchvision import transforms
+import numpy as np
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def test():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    _, _, test_loader = get_dataloaders()
-
+    _, _, test_loader = get_dataloaders(batch_size=64)
     model = ProtoPNet().to(device)
-    model.load_state_dict(torch.load("checkpoints/best_model.pth", map_location=device))
+    model.load_state_dict(torch.load('best_model.pth'))
     model.eval()
 
-    criterion = nn.CrossEntropyLoss()
-
-    total_loss = 0.0
     correct = 0
     total = 0
-    all_preds = []
-    all_labels = []
+
+    tta_transforms = [
+        transforms.Compose([]),
+        transforms.Compose([transforms.RandomHorizontalFlip(p=1.0)]),
+        transforms.Compose([transforms.RandomVerticalFlip(p=1.0)]),
+    ]
 
     with torch.no_grad():
         for images, labels in test_loader:
-            images, labels = images.to(device), labels.squeeze().long().to(device)
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            total_loss += loss.item()
+            images, labels = images.to(device), labels.to(device)
+            logits_sum = torch.zeros((images.size(0), 7)).to(device)
 
-            _, predicted = torch.max(outputs, 1)
+            for tta in tta_transforms:
+                augmented = torch.stack([tta(img.cpu()) for img in images]).to(device)
+                logits_sum += model(augmented)
+
+            predictions = logits_sum.argmax(1)
+            correct += (predictions == labels).sum().item()
             total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
 
-            all_preds.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-
-    avg_loss = total_loss / len(test_loader)
-    accuracy = 100. * correct / total
-
-    print(f"✅ Test Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%")
-    print("\n📊 Classification Report:\n", classification_report(all_labels, all_preds))
-    print("\n🧾 Confusion Matrix:\n", confusion_matrix(all_labels, all_preds))
+    acc = correct / total
+    print(f"✅ Test Accuracy: {acc:.2%}")
 
 if __name__ == "__main__":
     test()

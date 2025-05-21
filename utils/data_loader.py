@@ -1,46 +1,29 @@
-import torch 
+from medmnist import INFO, DermaMNIST
 from torchvision import transforms
-from torch.utils.data import DataLoader
-from medmnist import INFO
-from medmnist.dataset import DermaMNIST
+from torch.utils.data import DataLoader, random_split
+import torch
 
-def get_dataloaders(batch_size=64, val_split=0.1):
-    data_flag = 'dermamnist'
-    info = INFO[data_flag]
-    num_classes = len(info['label'])
+def get_dataloaders(batch_size=64, val_split=0.1, seed=42, shuffle=True, image_size=224):
+    info = INFO['dermamnist']
+    DataClass = DermaMNIST
 
-    # ✅ Normalization based on dataset stats (mean/std from medmnist docs)
-    norm_transform = transforms.Normalize(mean=[0.5], std=[0.5])  # or use dataset-specific if known
-
-    # ✅ Strong augmentation for training
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(28, scale=(0.8, 1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(),
-        transforms.RandomRotation(20),
-        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3),
+    transform = transforms.Compose([
         transforms.ToTensor(),
-        norm_transform,
+        transforms.Resize((image_size, image_size)),
+        transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
     ])
 
-    # ✅ Minimal augmentation for validation/test
-    test_transform = transforms.Compose([
-        transforms.Resize((28, 28)),
-        transforms.ToTensor(),
-        norm_transform,
-    ])
+    full_train_dataset = DataClass(split='train', transform=transform, download=True)
+    test_dataset = DataClass(split='test', transform=transform, download=True)
 
-    # ✅ Load datasets
-    train_dataset = DermaMNIST(split='train', transform=train_transform, download=True)
-    test_dataset = DermaMNIST(split='test', transform=test_transform, download=True)
+    total_train = len(full_train_dataset)
+    val_size = int(val_split * total_train)
+    train_size = total_train - val_size
 
-    # ✅ Manual validation split from training data
-    val_size = int(len(train_dataset) * val_split)
-    train_size = len(train_dataset) - val_size
-    train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
+    generator = torch.Generator().manual_seed(seed)
+    train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size], generator=generator)
 
-    # ✅ DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
