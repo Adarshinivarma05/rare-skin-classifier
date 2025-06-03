@@ -1,48 +1,40 @@
+# train.py
 import torch
+import torch.nn as nn
+import torch.optim as optim
 from models.protopnet_skin_classifier import ProtoPNet
 from utils.data_loader import get_dataloaders
-from utils.train_utils import compute_loss_weights, get_optimizer, get_scheduler
-import torch.nn as nn
+from utils.train_utils import calculate_metrics
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = ProtoPNet().to(device)
 
-train_loader, _ = get_dataloaders(batch_size=64)
-class_weights = compute_loss_weights(train_loader).to(device)
+train_loader, val_loader, _ = get_dataloaders()
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
-criterion = nn.CrossEntropyLoss(weight=class_weights)
-optimizer = get_optimizer(model)
-scheduler = get_scheduler(optimizer)
+best_val_f1 = 0
 
-best_loss = float('inf')
-patience, trigger = 5, 0
-
-for epoch in range(30):
+for epoch in range(1, 21):
    model.train()
-   running_loss = 0.0
+   total_loss = 0
+
    for images, labels in train_loader:
        images, labels = images.to(device), labels.squeeze().long().to(device)
+
        optimizer.zero_grad()
        outputs = model(images)
        loss = criterion(outputs, labels)
        loss.backward()
        optimizer.step()
-       running_loss += loss.item()
+       total_loss += loss.item()
 
-   avg_loss = running_loss / len(train_loader)
-   scheduler.step(avg_loss)
+   val_acc, val_f1 = calculate_metrics(model, val_loader, device)
+   avg_loss = total_loss / len(train_loader)
+   print(f"Epoch {epoch} | Train Loss: {avg_loss:.4f} | Val Acc: {val_acc:.2f}% | Val F1: {val_f1:.4f}")
 
-   print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f}")
-
-   # Early stopping and checkpoint
-   if avg_loss < best_loss:
-       best_loss = avg_loss
-       trigger = 0
-       torch.save(model.state_dict(), "protopnet_best.pth")
-   else:
-       trigger += 1
-       if trigger >= patience:
-           print("Early stopping triggered.")
-           break
+   if val_f1 > best_val_f1:
+       torch.save(model.state_dict(), "best_model.pth")
+       best_val_f1 = val_f1
 
 
