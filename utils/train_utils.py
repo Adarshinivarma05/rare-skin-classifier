@@ -1,18 +1,24 @@
+# utils/train_utils.py
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from sklearn.utils.class_weight import compute_class_weight
-import numpy as np
+from sklearn.metrics import f1_score
 
-def compute_loss_weights(train_loader):
-   all_labels = []
-   for _, labels in train_loader:
-       all_labels.extend(labels.squeeze().numpy())
-   class_weights = compute_class_weight('balanced', classes=np.unique(all_labels), y=all_labels)
-   return torch.tensor(class_weights, dtype=torch.float)
+def calculate_metrics(model, dataloader, device):
+   model.eval()
+   correct = 0
+   total = 0
+   all_preds, all_labels = [], []
 
-def get_optimizer(model, lr=1e-4):
-   return optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+   with torch.no_grad():
+       for images, labels in dataloader:
+           images, labels = images.to(device), labels.squeeze().long().to(device)
+           outputs = model(images)
+           _, preds = torch.max(outputs, 1)
+           correct += (preds == labels).sum().item()
+           total += labels.size(0)
+           all_preds.extend(preds.cpu().numpy())
+           all_labels.extend(labels.cpu().numpy())
 
-def get_scheduler(optimizer):
-   return optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
+   acc = 100 * correct / total
+   f1 = f1_score(all_labels, all_preds, average='weighted')
+   return acc, f1
+
