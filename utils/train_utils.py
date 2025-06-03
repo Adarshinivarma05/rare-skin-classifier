@@ -1,25 +1,18 @@
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 
-class EarlyStopping:
-    def __init__(self, patience=7, min_delta=0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
+def compute_loss_weights(train_loader):
+   all_labels = []
+   for _, labels in train_loader:
+       all_labels.extend(labels.squeeze().numpy())
+   class_weights = compute_class_weight('balanced', classes=np.unique(all_labels), y=all_labels)
+   return torch.tensor(class_weights, dtype=torch.float)
 
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-            return False
-        elif val_loss < self.best_loss - self.min_delta:
-            self.best_loss = val_loss
-            self.counter = 0
-            return False
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                return True
-            return False
+def get_optimizer(model, lr=1e-4):
+   return optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
-def save_checkpoint(model, path='best_model.pth'):
-    torch.save(model.state_dict(), path)
+def get_scheduler(optimizer):
+   return optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
