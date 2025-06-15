@@ -1,13 +1,18 @@
-# utils/train_utils.py
-import torch
+import torch, torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score
 
-def train_epoch(model, loader, criterion, optimizer, device, scaler=None):
+
+def _loss_mixup(outputs, y_a, y_b, lam, criterion):
+    return lam * criterion(outputs, y_a) + (1 - lam) * criterion(outputs, y_b)
+
+
+def train_epoch(model, loader, criterion, optimizer, scaler, device):
     model.train()
-    total_loss, all_preds, all_labels = 0, [], []
+    total_loss, preds_all, labels_all = 0, [], []
 
     for imgs, labels in loader:
-        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
+        imgs   = imgs.to(device, non_blocking=True)
+        labels = labels.squeeze().long().to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast(enabled=scaler is not None):
             outputs = model(imgs)
@@ -22,31 +27,34 @@ def train_epoch(model, loader, criterion, optimizer, device, scaler=None):
             loss.backward(); optimizer.step()
 
         total_loss += loss.item()
-        all_preds.extend(outputs.argmax(1).detach().cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
+        preds_all.extend(outputs.argmax(1).detach().cpu().numpy())
+        labels_all.extend(labels.cpu().numpy())
 
-    avg_loss = total_loss / len(loader)
-    acc      = accuracy_score(all_labels, all_preds)
-    f1       = f1_score(all_labels, all_preds, average="weighted")
-    return avg_loss, acc, f1
+    return (
+        total_loss / len(loader),
+        accuracy_score(labels_all, preds_all),
+        f1_score(labels_all, preds_all, average="weighted")
+    )
 
 
 @torch.no_grad()
-def evaluate_model(model, loader, criterion, device):
+def eval_epoch(model, loader, criterion, device):
     model.eval()
-    total_loss, all_preds, all_labels = 0, [], []
+    total_loss, preds_all, labels_all = 0, [], []
 
     for imgs, labels in loader:
-        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
+        imgs = imgs.to(device, non_blocking=True)
+        labels = labels.squeeze().long().to(device, non_blocking=True)
+
         outputs = model(imgs)
         loss = criterion(outputs, labels)
 
         total_loss += loss.item()
-        all_preds.extend(outputs.argmax(1).cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
+        preds_all.extend(outputs.argmax(1).cpu().numpy())
+        labels_all.extend(labels.cpu().numpy())
 
-    avg_loss = total_loss / len(loader)
-    acc      = accuracy_score(all_labels, all_preds)
-    f1       = f1_score(all_labels, all_preds, average="weighted")
-    return avg_loss, acc, f1
-
+    return (
+        total_loss / len(loader),
+        accuracy_score(labels_all, preds_all),
+        f1_score(labels_all, preds_all, average="weighted")
+    )
