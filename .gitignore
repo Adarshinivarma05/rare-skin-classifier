@@ -1,3 +1,10 @@
 __pycache__/
 *.pth
-*.ipynb_checkpoints
+*.png
+*.ipynb_checkpoints/
+metrics.png
+
+
+
+
+
