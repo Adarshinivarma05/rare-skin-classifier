@@ -1,88 +1,24 @@
-# Few-Shot Skin Condition Classification using ProtoPNet
+# Rare Skin Condition Classifier (ProtoPNet + Grad‑CAM)
 
-Project structure ready.
+**Goal:** ≥ 90 % test accuracy & weighted F1 ≈ 0.90 on DermaMNIST.
 
-# Rare Skin Condition Classifier using ProtoPNet
+### Highlights
+* ResNet‑50 backbone + 90 prototypes
+* Heavy AutoAugment / jitter / rotation
+* Class‑balanced weighted loss + label smoothing
+* AdamW + CosineWarmRestarts + AMP mixed precision
+* Early stopping & metric plots
+* Grad‑CAM visualization (`explain.py`)
 
-This project implements a **Few-Shot Classification** model for rare skin conditions using a Prototypical Network (ProtoPNet) architecture with PyTorch.
-
-Skin diseases can be challenging to classify, especially rare conditions with limited data. This project leverages the **DermaMNIST** dataset from MedMNIST and a ProtoPNet model to improve explainability and accuracy in classifying skin conditions.
-
-Features include:
-- ProtoPNet architecture based on ResNet18 backbone.
-- Few-shot learning with prototype-based classification.
-- Data loading and preprocessing via the MedMNIST DermaMNIST dataset.
-- Training pipeline with label smoothing, learning rate scheduler, early stopping, and TensorBoard logging.
-- Explainability via Grad-CAM visualizations.
-- Modular code structure with reusable utils for data loading, training, and visualization.
-
-Project Structure:
-```
-
-data/
-└── dermamnist/
-└── temp/
-
-models/
-└── protopnet\_skin\_classifier.py
-
-utils/
-├── data\_loader.py
-├── train.py
-├── visualizer.py
-└── explain\_utils.py
-
-.gitignore
-README.md
-explain.py
-test.py
-train.py
-
-````
-
-Getting Started:
-
-Prerequisites:
-- Python 3.8+
-- PyTorch
-- torchvision
-- medmnist
-- matplotlib
-- pytorch-grad-cam
-- tensorboard
-
-Install dependencies using:
-
+### Usage
 ```bash
-pip install torch torchvision medmnist matplotlib pytorch-grad-cam tensorboard
-````
+pip install torch torchvision medmnist scikit-learn pytorch-grad-cam
+python train.py      # trains & saves best_model.pth
+python test.py       # evaluates on test split
+python explain.py    # produces gradcam_example.png
 
-Usage:
 
-1. The dataset will automatically download using the `medmnist` library when running the training or evaluation scripts.
 
-2. Run training with:
 
-```bash
-python train.py
-```
 
-3. Run the explanation script to generate Grad-CAM visualizations:
 
-```bash
-python explain.py
-```
-
-4. View training logs with:
-
-```bash
-tensorboard --logdir=runs
-```
-
-Author:
-Spoorthi (spoorthichinthamalla)
-Adarshini Varma (Adarshinivarma05)
-Harsha Vardhan Reddy (h-rsh-19) 
-
-License:
-This project is licensed under the MIT License.

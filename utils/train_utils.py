@@ -1,18 +1,52 @@
+# utils/train_utils.py
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from sklearn.utils.class_weight import compute_class_weight
-import numpy as np
+from sklearn.metrics import accuracy_score, f1_score
 
-def compute_loss_weights(train_loader):
-   all_labels = []
-   for _, labels in train_loader:
-       all_labels.extend(labels.squeeze().numpy())
-   class_weights = compute_class_weight('balanced', classes=np.unique(all_labels), y=all_labels)
-   return torch.tensor(class_weights, dtype=torch.float)
+def train_epoch(model, loader, criterion, optimizer, device, scaler=None):
+    model.train()
+    total_loss, all_preds, all_labels = 0, [], []
 
-def get_optimizer(model, lr=1e-4):
-   return optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    for imgs, labels in loader:
+        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
 
-def get_scheduler(optimizer):
-   return optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
+        with torch.cuda.amp.autocast(enabled=scaler is not None):
+            outputs = model(imgs)
+            loss = criterion(outputs, labels)
+
+        optimizer.zero_grad(set_to_none=True)
+        if scaler:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward(); optimizer.step()
+
+        total_loss += loss.item()
+        all_preds.extend(outputs.argmax(1).detach().cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+    avg_loss = total_loss / len(loader)
+    acc      = accuracy_score(all_labels, all_preds)
+    f1       = f1_score(all_labels, all_preds, average="weighted")
+    return avg_loss, acc, f1
+
+
+@torch.no_grad()
+def evaluate_model(model, loader, criterion, device):
+    model.eval()
+    total_loss, all_preds, all_labels = 0, [], []
+
+    for imgs, labels in loader:
+        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
+        outputs = model(imgs)
+        loss = criterion(outputs, labels)
+
+        total_loss += loss.item()
+        all_preds.extend(outputs.argmax(1).cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+    avg_loss = total_loss / len(loader)
+    acc      = accuracy_score(all_labels, all_preds)
+    f1       = f1_score(all_labels, all_preds, average="weighted")
+    return avg_loss, acc, f1
+

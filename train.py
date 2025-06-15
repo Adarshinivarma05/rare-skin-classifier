@@ -1,85 +1,49 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from models.protopnet_skin_classifier import ProtoPNet
-from utils.data_loader import get_dataloaders
+# train.py
+import torch, numpy as np
+import torch.nn as nn, torch.optim as optim
 from sklearn.utils.class_weight import compute_class_weight
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-import numpy as np
 
+from utils.data_loader import load_dermamnist_dataset
+from utils.train_utils import train_epoch, evaluate_model
+from models.protopnet_skin_classifier import ProtoPNet
+
+# ─── Device ────────────────────────────────────────────────────────────────
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Device:", device)
 
-def train():
-    train_loader, val_loader, _ = get_dataloaders(batch_size=64)
-    model = ProtoPNet().to(device)
+# ─── Data ──────────────────────────────────────────────────────────────────
+train_loader, val_loader, _, num_classes, flat_labels = load_dermamnist_dataset(batch_size=32)
 
-    # Compute class weights
-    all_labels = []
-    for _, labels in train_loader:
-        all_labels.extend(labels.numpy())
-    class_weights = compute_class_weight('balanced', classes=np.unique(all_labels), y=all_labels)
-    class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
+# ─── Class‑balanced weights ───────────────────────────────────────────────
+cls_w = compute_class_weight(class_weight="balanced",
+                             classes=np.unique(flat_labels),
+                             y=flat_labels)
+cls_w = torch.tensor(cls_w, dtype=torch.float32).to(device)
 
-    # Loss and optimizer
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=4, verbose=True)
+# ─── Model / loss / optimizer ─────────────────────────────────────────────
+model = ProtoPNet(num_prototypes=60, num_classes=num_classes).to(device)
+criterion = nn.CrossEntropyLoss(weight=cls_w, label_smoothing=0.1)
+optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+scaler    = torch.cuda.amp.GradScaler()
 
-    best_val_acc = 0.0
-    patience = 8
-    trigger = 0
+# ─── Training loop ────────────────────────────────────────────────────────
+num_epochs = 25
+best_f1 = 0
+for epoch in range(1, num_epochs + 1):
+    tr_loss, tr_acc, tr_f1 = train_epoch(model, train_loader, criterion,
+                                         optimizer, device, scaler)
+    val_loss, val_acc, val_f1 = evaluate_model(model, val_loader, criterion, device)
 
-    for epoch in range(50):
-        model.train()
-        total_loss = 0.0
-        correct = 0
+    print(f"Epoch {epoch:02d} | TL {tr_loss:.3f} | VL {val_loss:.3f} | "
+          f"VA {val_acc*100:.1f}% | F1 {val_f1:.3f}")
 
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+    if val_f1 > best_f1:
+        torch.save(model.state_dict(), "best_model.pth")
+        best_f1 = val_f1
 
-            total_loss += loss.item() * images.size(0)
-            correct += (outputs.argmax(1) == labels).sum().item()
+print("Best Validation F1:", best_f1)
 
-        train_loss = total_loss / len(train_loader.dataset)
-        train_acc = correct / len(train_loader.dataset)
 
-        # Validation
-        model.eval()
-        val_loss = 0.0
-        val_correct = 0
 
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
 
-                val_loss += loss.item() * images.size(0)
-                val_correct += (outputs.argmax(1) == labels).sum().item()
 
-        val_loss /= len(val_loader.dataset)
-        val_acc = val_correct / len(val_loader.dataset)
-        scheduler.step(val_loss)
-
-        print(f"Epoch {epoch+1}/50 | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2%} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2%}")
-
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            trigger = 0
-            torch.save(model.state_dict(), 'best_model.pth')
-            print("✅ Best model saved.")
-        else:
-            trigger += 1
-            if trigger >= patience:
-                print("⏹️ Early stopping triggered.")
-                break
-
-    print(f"\n🏁 Training complete. Best Val Accuracy: {best_val_acc:.2%}")
-
-if __name__ == "__main__":
-    train()
