@@ -1,16 +1,17 @@
-# test.py
 import torch
 from models.protopnet_skin_classifier import ProtoPNet
 from utils.data_loader import get_dataloaders
-from utils.train_utils import calculate_metrics
+from utils.train_utils import epoch_step
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = ProtoPNet().to(device)
-model.load_state_dict(torch.load("best_model.pth"))
-model.eval()
+model  = ProtoPNet().to(device)
+model.load_state_dict(torch.load('best_model.pth'))
 
 _, _, test_loader = get_dataloaders()
+criterion = torch.nn.CrossEntropyLoss()
 
-acc, f1 = calculate_metrics(model, test_loader, device)
-print(f"Test Accuracy: {acc:.2f}% | F1 Score: {f1:.4f}")
+loss, acc, f1 = epoch_step(model, test_loader, criterion, None, None, device)
+print(f"Test Loss {loss:.3f} | Test Acc {acc*100:.2f}% | Test F1 {f1:.3f}")
+
+
 
