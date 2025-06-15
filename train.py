@@ -13,7 +13,8 @@ train_loader, val_loader, _ = get_dataloaders(batch_size=32)
 criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 optimizer = optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20)
-scaler = torch.amp.GradScaler(device_type='cuda')
+scaler = torch.cuda.amp.GradScaler()
+
 
 history = {k: [] for k in ['train_loss', 'val_loss', 'val_acc', 'val_f1']}
 best_f1 = 0
@@ -35,6 +36,8 @@ for epoch in range(1, 31):
         best_f1 = val_f1
 
 plot_metrics(history)
+
+
 
 
 
