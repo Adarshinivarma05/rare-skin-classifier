@@ -1,39 +1,52 @@
-import torch, torch.nn.functional as F
+# utils/train_utils.py
+import torch
 from sklearn.metrics import accuracy_score, f1_score
 
-def epoch_step(model, loader, criterion, optimizer=None, scaler=None,
-               device='cpu', mixup_fn=None):
-    model.train() if optimizer else model.eval()
-    run_loss, preds_all, labels_all = 0, [], []
+def train_epoch(model, loader, criterion, optimizer, device, scaler=None):
+    model.train()
+    total_loss, all_preds, all_labels = 0, [], []
 
-    for x, y in loader:
-        x, y = x.to(device), y.squeeze().long().to(device)
-
-        # Optional MixUp only during training
-        if optimizer and mixup_fn:
-            x, y_a, y_b, lam = mixup_fn(x, y)
+    for imgs, labels in loader:
+        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
 
         with torch.cuda.amp.autocast(enabled=scaler is not None):
-            out = model(x)
-            if optimizer and mixup_fn:
-                loss = lam * criterion(out, y_a) + (1 - lam) * criterion(out, y_b)
-            else:
-                loss = criterion(out, y)
+            outputs = model(imgs)
+            loss = criterion(outputs, labels)
 
-        if optimizer:
+        optimizer.zero_grad(set_to_none=True)
+        if scaler:
             scaler.scale(loss).backward()
-            scaler.step(optimizer); scaler.update()
-            optimizer.zero_grad()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward(); optimizer.step()
 
-        run_loss += loss.item()
-        preds_all.extend(out.argmax(1).detach().cpu().numpy())
-        labels_all.extend(y.cpu().numpy())
+        total_loss += loss.item()
+        all_preds.extend(outputs.argmax(1).detach().cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
 
-    return (run_loss/len(loader),
-            accuracy_score(labels_all, preds_all),
-            f1_score(labels_all, preds_all, average='weighted'))
+    avg_loss = total_loss / len(loader)
+    acc      = accuracy_score(all_labels, all_preds)
+    f1       = f1_score(all_labels, all_preds, average="weighted")
+    return avg_loss, acc, f1
 
 
+@torch.no_grad()
+def evaluate_model(model, loader, criterion, device):
+    model.eval()
+    total_loss, all_preds, all_labels = 0, [], []
 
+    for imgs, labels in loader:
+        imgs = imgs.to(device); labels = labels.squeeze().long().to(device)
+        outputs = model(imgs)
+        loss = criterion(outputs, labels)
 
+        total_loss += loss.item()
+        all_preds.extend(outputs.argmax(1).cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+    avg_loss = total_loss / len(loader)
+    acc      = accuracy_score(all_labels, all_preds)
+    f1       = f1_score(all_labels, all_preds, average="weighted")
+    return avg_loss, acc, f1
 
