@@ -1,5 +1,7 @@
-from sklearn.utils.class_weight import compute_class_weight
+import torch
+import torch.nn as nn
 import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
 from medmnist import DermaMNIST
 
 labels = np.array(DermaMNIST(split='train', download=True).labels).squeeze()
