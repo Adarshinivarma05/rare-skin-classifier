@@ -1,32 +1,45 @@
-# utils/data_loader.py
-from medmnist import INFO, DermaMNIST
+from medmnist import DermaMNIST
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Subset
 
-def get_dataloaders(batch_size=64, val_split=0.2):
-   info = INFO['dermamnist']
-   DataClass = DermaMNIST
 
-   transform = transforms.Compose([
-       transforms.Resize((224, 224)),
-       transforms.ToTensor(),
-       transforms.Normalize(mean=[.5], std=[.5])
-   ])
+def get_dataloaders(batch_size: int = 128, val_split: float = 0.2):
+    """Return train / val / test dataloaders with heavy augmentation."""
+    # ---------- Transforms ----------
+    transform_train = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+        transforms.AutoAugment(transforms.AutoAugmentPolicy.IMAGENET),
+        transforms.ToTensor(),
+        transforms.Normalize([.5], [.5])
+    ])
 
-   full_dataset = DataClass(split='train', transform=transform, download=True)
-   test_dataset = DataClass(split='test', transform=transform, download=True)
+    transform_eval = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([.5], [.5])
+    ])
 
-   indices = list(range(len(full_dataset)))
-   train_idx, val_idx = train_test_split(indices, test_size=val_split, stratify=full_dataset.labels)
+    # ---------- Datasets ----------
+    full_dataset = DermaMNIST(split='train', transform=transform_train, download=True)
+    test_dataset = DermaMNIST(split='test', transform=transform_eval, download=True)
 
-   train_set = Subset(full_dataset, train_idx)
-   val_set = Subset(full_dataset, val_idx)
+    # ---------- Stratified split ----------
+    indices = list(range(len(full_dataset)))
+    train_idx, val_idx = train_test_split(
+        indices, test_size=val_split, stratify=full_dataset.labels, random_state=42
+    )
+    train_set = Subset(full_dataset, train_idx)
+    val_set   = Subset(full_dataset, val_idx)
+    val_set.dataset.transform = transform_eval      # eval transforms for val
 
-   train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-   val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
-   test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    # ---------- Dataloaders ----------
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,  num_workers=2, pin_memory=True)
+    val_loader   = DataLoader(val_set,   batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
 
-   return train_loader, val_loader, test_loader
+    return train_loader, val_loader, test_loader
 
