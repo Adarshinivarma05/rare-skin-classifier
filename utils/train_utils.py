@@ -11,8 +11,7 @@ def epoch_step(model, loader, criterion, optimizer=None, scaler=None, device='cp
     for imgs, labels in loader:
         imgs, labels = imgs.to(device), labels.squeeze().long().to(device)
 
-        with torch.cuda.amp.autocast(enabled=scaler is not None):
-
+       with torch.amp.autocast(device_type='cuda', enabled=scaler is not None):
             outputs = model(imgs)
             loss = criterion(outputs, labels)
 
