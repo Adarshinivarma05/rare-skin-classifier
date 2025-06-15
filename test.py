@@ -4,14 +4,15 @@ from utils.data_loader import get_dataloaders
 from utils.train_utils import epoch_step
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model  = ProtoPNet().to(device)
+model = ProtoPNet().to(device)
 model.load_state_dict(torch.load('best_model.pth'))
 
-_, _, test_loader = get_dataloaders()
+_, _, test_loader = get_dataloaders(batch_size=32)
 criterion = torch.nn.CrossEntropyLoss()
-
 loss, acc, f1 = epoch_step(model, test_loader, criterion, None, None, device)
-print(f"Test Loss {loss:.3f} | Test Acc {acc*100:.2f}% | Test F1 {f1:.3f}")
+print(f"Test Loss {loss:.3f} | Acc {acc*100:.2f}% | F1 {f1:.3f}")
+
+
 
 
 
