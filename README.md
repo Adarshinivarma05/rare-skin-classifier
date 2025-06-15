@@ -1,14 +1,24 @@
-# Few-Shot Skin Condition Classifier with ProtoPNet
+# Rare Skin Condition Classifier (ProtoPNet + Grad‑CAM)
 
-This project uses a prototype-based neural network to classify rare skin diseases using DermaMNIST.
+**Goal:** ≥ 90 % test accuracy & weighted F1 ≈ 0.90 on DermaMNIST.
 
-## Features
-- Model: ProtoPNet + ResNet50
-- Dataset: DermaMNIST
-- Explanation: Ready for Grad-CAM/prototype visualization
-- Goal: ≥ 95% Accuracy, ≤ 0.1 Loss
+### Highlights
+* ResNet‑50 backbone + 90 prototypes
+* Heavy AutoAugment / jitter / rotation
+* Class‑balanced weighted loss + label smoothing
+* AdamW + CosineWarmRestarts + AMP mixed precision
+* Early stopping & metric plots
+* Grad‑CAM visualization (`explain.py`)
 
-## Usage
-Train:
+### Usage
 ```bash
-python train.py
+pip install torch torchvision medmnist scikit-learn pytorch-grad-cam
+python train.py      # trains & saves best_model.pth
+python test.py       # evaluates on test split
+python explain.py    # produces gradcam_example.png
+
+
+
+
+
+
