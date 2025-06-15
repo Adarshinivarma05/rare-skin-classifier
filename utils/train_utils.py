@@ -1,35 +1,38 @@
-import torch
-from sklearn.metrics import f1_score, accuracy_score
+import torch, torch.nn.functional as F
+from sklearn.metrics import accuracy_score, f1_score
 
-def epoch_step(model, loader, criterion, optimizer=None, scaler=None, device='cpu'):
-    is_train = optimizer is not None
-    model.train() if is_train else model.eval()
+def epoch_step(model, loader, criterion, optimizer=None, scaler=None,
+               device='cpu', mixup_fn=None):
+    model.train() if optimizer else model.eval()
+    run_loss, preds_all, labels_all = 0, [], []
 
-    running_loss = 0
-    all_preds, all_labels = [], []
+    for x, y in loader:
+        x, y = x.to(device), y.squeeze().long().to(device)
 
-    for imgs, labels in loader:
-        imgs, labels = imgs.to(device), labels.squeeze().long().to(device)
+        # Optional MixUp only during training
+        if optimizer and mixup_fn:
+            x, y_a, y_b, lam = mixup_fn(x, y)
 
-       with torch.amp.autocast(device_type='cuda', enabled=scaler is not None):
-            outputs = model(imgs)
-            loss = criterion(outputs, labels)
+        with torch.cuda.amp.autocast(enabled=scaler is not None):
+            out = model(x)
+            if optimizer and mixup_fn:
+                loss = lam * criterion(out, y_a) + (1 - lam) * criterion(out, y_b)
+            else:
+                loss = criterion(out, y)
 
-        if is_train:
+        if optimizer:
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            scaler.step(optimizer); scaler.update()
             optimizer.zero_grad()
 
-        running_loss += loss.item()
-        preds = outputs.argmax(1)
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
+        run_loss += loss.item()
+        preds_all.extend(out.argmax(1).detach().cpu().numpy())
+        labels_all.extend(y.cpu().numpy())
 
-    loss_avg = running_loss / len(loader)
-    acc = accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds, average='weighted')
-    return loss_avg, acc, f1
+    return (run_loss/len(loader),
+            accuracy_score(labels_all, preds_all),
+            f1_score(labels_all, preds_all, average='weighted'))
+
 
 
 
