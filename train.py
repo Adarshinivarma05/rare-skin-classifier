@@ -1,9 +1,3 @@
-"""
-Episodic Prototypical-Network training script.
-- 224 × 224 DermaMNIST images
-- ResNet-50 backbone
-- AMP for memory+speed
-"""
 
 import argparse, numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 from torchvision import transforms, models
@@ -28,7 +22,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[.5], std=[.5])
+    transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # 1-channel to 3-channel
+    transforms.Normalize([.5, .5, .5], [.5, .5, .5])
 ])
 train_ds = DermaMNIST(split="train", transform=transform, download=True)
 val_ds   = DermaMNIST(split="val",   transform=transform, download=True)
@@ -56,7 +51,7 @@ class ProtoNet(nn.Module):
 
 model  = ProtoNet().to(device)
 opt    = torch.optim.AdamW(model.parameters(), lr=args.lr)
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.amp.GradScaler()
 
 # ----------------------------- loops -----------------------------
 def run_epoch(loader, train=True):
@@ -64,10 +59,10 @@ def run_epoch(loader, train=True):
     loss_list, acc_list = [], []
 
     for s_img, s_lbl, q_img, q_lbl in loader:
-        s_img, s_lbl = s_img.to(device), s_lbl.to(device)
-        q_img, q_lbl = q_img.to(device), q_lbl.to(device)
+        s_img, s_lbl = s_img.squeeze(0).to(device), s_lbl.squeeze(0).to(device)
+        q_img, q_lbl = q_img.squeeze(0).to(device), q_lbl.squeeze(0).to(device)
 
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
             logits = model(s_img, s_lbl, q_img)
             loss   = F.cross_entropy(logits, q_lbl)
 
