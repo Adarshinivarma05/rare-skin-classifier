@@ -22,9 +22,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # 1-channel to 3-channel
+    transforms.Lambda(lambda x: x if x.shape[0] == 3 else x.repeat(3, 1, 1)),
     transforms.Normalize([.5, .5, .5], [.5, .5, .5])
 ])
+
 train_ds = DermaMNIST(split="train", transform=transform, download=True)
 val_ds   = DermaMNIST(split="val",   transform=transform, download=True)
 
