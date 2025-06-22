@@ -1,67 +1,93 @@
-# train.py   (overwrite or edit imports + setup)
-import torch, numpy as np
-import torch.nn as nn, torch.optim as optim
-from sklearn.utils.class_weight import compute_class_weight
+"""
+Episodic Prototypical-Network training script.
+- 224 × 224 DermaMNIST images
+- ResNet-50 backbone
+- AMP for memory+speed
+"""
 
-from models.protopnet_skin_classifier import ProtoPNet
-from utils.data_loader import get_loaders
-from utils.train_utils import train_epoch, eval_epoch, FocalLoss
-from utils.visualizer import plot_history
+import argparse, numpy as np, torch, torch.nn as nn, torch.nn.functional as F
+from torchvision import transforms, models
+from medmnist import DermaMNIST
+from utils.episode_loader import get_episode_loader
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using", DEVICE)
+# ----------------------------- CLI args -----------------------------
+parser = argparse.ArgumentParser()
+parser.add_argument("--n_way",      type=int,   default=3,      help="classes per episode")
+parser.add_argument("--k_shot",     type=int,   default=1,      help="support images/class")
+parser.add_argument("--q",          type=int,   default=1,      help="query images/class")
+parser.add_argument("--episodes",   type=int,   default=1000,   help="episodes per epoch")
+parser.add_argument("--epochs",     type=int,   default=20,     help="training epochs")
+parser.add_argument("--lr",         type=float, default=1e-4,   help="learning rate")
+parser.add_argument("--save",       type=str,   default="proto_resnet50.pth",
+                    help="checkpoint filename")
+args = parser.parse_args()
 
-# ─── Data
-train_loader, val_loader, _, flat_labels = get_loaders(batch_size=32)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ─── Class‑balanced weights
-cls_w = torch.tensor(
-    compute_class_weight(class_weight="balanced",
-                         classes=np.unique(flat_labels),
-                         y=flat_labels),
-    dtype=torch.float32, device=DEVICE)
+# ----------------------------- dataset -----------------------------
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[.5], std=[.5])
+])
+train_ds = DermaMNIST(split="train", transform=transform, download=True)
+val_ds   = DermaMNIST(split="val",   transform=transform, download=True)
 
-# ─── Model
-model = ProtoPNet().to(DEVICE)
+train_loader = get_episode_loader(train_ds, args.n_way, args.k_shot, args.q,
+                                  args.episodes, shuffle=True)
+val_loader   = get_episode_loader(val_ds,   args.n_way, args.k_shot, args.q,
+                                  episodes_per_epoch=300, shuffle=False)
 
-# ─── Phase‑1: freeze backbone except layer4
-for n, p in model.backbone.named_parameters():
-    if not n.startswith("layer4"):
-        p.requires_grad = False
+# ----------------------------- model -----------------------------
+class ProtoNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        backbone = models.resnet50(weights=None)
+        backbone.fc = nn.Identity()           # 2048-d embedding
+        self.encoder = backbone
 
-criterion = FocalLoss(weight=cls_w, gamma=2.0).to(DEVICE)
-optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
-                        lr=3e‑4, weight_decay=1e‑4)
-scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5)
-scaler    = torch.cuda.amp.GradScaler()
+    def forward(self, s_img, s_lbl, q_img):
+        z_support = self.encoder(s_img)       # (N*K, 2048)
+        z_query   = self.encoder(q_img)       # (N*Q, 2048)
+        classes   = torch.unique(s_lbl)
+        protos    = torch.stack([z_support[s_lbl==c].mean(0) for c in classes])
+        dists     = torch.cdist(z_query, protos)          # (N*Q, N)
+        return -dists                                     # logits
 
-history = {k: [] for k in ["train_loss", "val_loss", "val_acc", "val_f1"]}
-best_f1, patience, best_ep = 0, 6, 0
+model  = ProtoNet().to(device)
+opt    = torch.optim.AdamW(model.parameters(), lr=args.lr)
+scaler = torch.cuda.amp.GradScaler()
 
-# ─── Training Loop
-for epoch in range(1, 40):
-    # Un‑freeze entire backbone after 6 warm‑up epochs & drop LR
-    if epoch == 7:
-        for p in model.backbone.parameters():
-            p.requires_grad = True
-        optimizer = optim.AdamW(model.parameters(), lr=5e‑5, weight_decay=1e‑4)
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5)
-        print("→ Un‑froze backbone, lowered LR to 5e‑5")
+# ----------------------------- loops -----------------------------
+def run_epoch(loader, train=True):
+    model.train() if train else model.eval()
+    loss_list, acc_list = [], []
 
-    tl, ta, tf = train_epoch(model, train_loader, criterion,
-                             optimizer, scaler, DEVICE)
-    vl, va, vf = eval_epoch(model, val_loader,  criterion, DEVICE)
-    scheduler.step(epoch)
+    for s_img, s_lbl, q_img, q_lbl in loader:
+        s_img, s_lbl = s_img.to(device), s_lbl.to(device)
+        q_img, q_lbl = q_img.to(device), q_lbl.to(device)
 
-    for k, v in zip(history.keys(), [tl, vl, va, vf]): history[k].append(v)
-    print(f"E{epoch:02d} TL {tl:.3f} VL {vl:.3f} VA {va*100:.1f}% F1 {vf:.3f}")
+        with torch.cuda.amp.autocast():
+            logits = model(s_img, s_lbl, q_img)
+            loss   = F.cross_entropy(logits, q_lbl)
 
-    if vf > best_f1:
-        torch.save(model.state_dict(), "best_model.pth")
-        best_f1, best_ep = vf, epoch
-    elif epoch - best_ep >= patience:
-        print("Early stopping at epoch", epoch)
-        break
+        if train:
+            opt.zero_grad()
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
 
-plot_history(history)
-print("Best Val F1:", best_f1)
+        preds = logits.argmax(1)
+        acc   = (preds == q_lbl).float().mean()
+        loss_list.append(loss.item()); acc_list.append(acc.item())
+
+    return np.mean(loss_list), np.mean(acc_list)
+
+# ----------------------------- training -----------------------------
+for ep in range(1, args.epochs + 1):
+    tr_loss, tr_acc = run_epoch(train_loader, train=True)
+    vl_loss, vl_acc = run_epoch(val_loader,   train=False)
+    print(f"Epoch {ep:02d} | train acc {tr_acc:.3f} | val acc {vl_acc:.3f}")
+
+torch.save(model.state_dict(), args.save)
+print(f"✔️  model saved to {args.save}")
