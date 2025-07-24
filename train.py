@@ -10,6 +10,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description="Rare Skin Condition Classifier Training")
+    parser.add_argument('--data_path', type=str, default='data/dermamnist/dermamnist.npz')
     parser.add_argument('--n_way', type=int, default=5, help="Number of classes per episode (few-shot)")
     parser.add_argument('--k_shot', type=int, default=1, help="Support examples per class (few-shot)")
     parser.add_argument('--q', type=int, default=5, help="Query examples per class (few-shot)")
@@ -19,6 +20,7 @@ def main():
     parser.add_argument('--save', type=str, default="proto_resnet50.pth", help="Path to save best model")
     parser.add_argument('--few_shot', action='store_true', help="Enable few-shot episodic training")
     parser.add_argument('--use_proto', action='store_true', help="Enable prototype-based model behavior")
+    
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
