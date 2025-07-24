@@ -81,6 +81,7 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 import numpy as np
 from collections import defaultdict
 import random
+from torch.utils.data import Sampler
 
 class EpisodicBatchSampler(Sampler):
     def __init__(self, labels, n_way, k_shot, q, episodes):
@@ -109,6 +110,7 @@ class EpisodicBatchSampler(Sampler):
 
 from torchvision import transforms
 from utils.derm_dataset import DermaDataset  # adjust if needed
+from torch.utils.data import DataLoader
 
 def get_few_shot_loaders(n_way, k_shot, q, episodes, root='data/dermamnist', img_size=224):
     transform = transforms.Compose([
