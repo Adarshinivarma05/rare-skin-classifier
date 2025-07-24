@@ -10,7 +10,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description="Rare Skin Condition Classifier Training")
-    parser.add_argument('--data_path', type=str, default='data/dermamnist/dermamnist.npz')
+    parser.add_argument('--data_path', type=str, default='data/dermamnist/dermamnist.npz', help="Path to dermamnist.npz file")
     parser.add_argument('--n_way', type=int, default=5, help="Number of classes per episode (few-shot)")
     parser.add_argument('--k_shot', type=int, default=1, help="Support examples per class (few-shot)")
     parser.add_argument('--q', type=int, default=5, help="Query examples per class (few-shot)")
@@ -29,31 +29,33 @@ def main():
     model = ProtoPNet(use_proto=args.use_proto).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    criterion = nn.CrossEntropyLoss()
-    scaler = GradScaler()
+    scaler = GradScaler(device)
 
     # 🧠 Load episodic or standard data loaders
     if args.few_shot:
         train_loader, val_loader = get_few_shot_loaders(
+            data_path=args.data_path,
             n_way=args.n_way, 
             k_shot=args.k_shot, 
             q=args.q, 
             episodes=args.episodes
         )
     else:
-        train_loader, val_loader, _, _ = get_loaders(batch_size=16)
+        train_loader, val_loader, _, _ = get_loaders(
+            data_path=args.data_path, batch_size=16
+        )
 
     best_val_acc = 0.0
 
     for epoch in range(1, args.epochs + 1):
         model.train()
         if args.few_shot:
-            train_loss, train_acc = few_shot_train_epoch(model, train_loader, criterion, optimizer, device, scaler)
+            train_loss, train_acc = few_shot_train_epoch(model, train_loader, criterion=nn.CrossEntropyLoss(), optimizer=optimizer, device=device, scaler=scaler)
         else:
-            train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device, scaler)
+            train_loss, train_acc = train_epoch(model, train_loader, criterion=nn.CrossEntropyLoss(), optimizer=optimizer, device=device, scaler=scaler)
 
         model.eval()
-        val_loss, val_acc, _ = eval_epoch(model, val_loader, criterion, device)
+        val_loss, val_acc, _ = eval_epoch(model, val_loader, criterion=nn.CrossEntropyLoss(), device=device)
 
         print(f"[Epoch {epoch}] ✅ Train Loss: {train_loss:.4f} | Train Acc: {train_acc*100:.2f}%")
         print(f"[Epoch {epoch}] 🔍 Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc*100:.2f}%")
