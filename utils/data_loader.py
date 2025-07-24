@@ -75,3 +75,34 @@ def get_few_shot_loaders(data_dir="data/dermamnist", n_way=5, k_shot=1, q=5, epi
     dataset = FewShotDataset(class_image_dict, n_way, k_shot, q, transform=transform)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return loader
+
+import torch
+from torch.utils.data import DataLoader, Dataset, Sampler
+import numpy as np
+from collections import defaultdict
+import random
+
+class EpisodicBatchSampler(Sampler):
+    def __init__(self, labels, n_way, k_shot, q, episodes):
+        self.n_way = n_way
+        self.k_shot = k_shot
+        self.q = q
+        self.episodes = episodes
+        self.class_to_indices = defaultdict(list)
+
+        for idx, label in enumerate(labels):
+            self.class_to_indices[label].append(idx)
+
+        self.classes = list(self.class_to_indices.keys())
+
+    def __len__(self):
+        return self.episodes
+
+    def __iter__(self):
+        for _ in range(self.episodes):
+            batch = []
+            selected_classes = random.sample(self.classes, self.n_way)
+            for cls in selected_classes:
+                indices = random.sample(self.class_to_indices[cls], self.k_shot + self.q)
+                batch.extend(indices)
+            yield batch
