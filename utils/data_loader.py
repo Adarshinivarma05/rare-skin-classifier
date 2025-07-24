@@ -109,7 +109,7 @@ class EpisodicBatchSampler(Sampler):
             yield batch
 
 from torchvision import transforms
-from utils.derm_dataset import DermaDataset  # adjust if needed
+from .derm_dataset import DermaDataset  # adjust if needed
 from torch.utils.data import DataLoader
 
 def get_few_shot_loaders(n_way, k_shot, q, episodes, root='data/dermamnist', img_size=224):
