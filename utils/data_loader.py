@@ -142,18 +142,32 @@ import random
 from utils.derm_dataset import DermaDataset
 
 # ✅ Standard dataloader
-def get_loaders(npz_path, batch_size=32):
+def get_loaders(data_path='data/dermamnist/dermamnist.npz', batch_size=16):
+    from torchvision import transforms
+    from utils.derm_dataset import DermaDataset
+
+    data = np.load(data_path)
+    X, y = data['images'], data['labels']
+
+    # Normalize to [0, 1]
+    X = X / 255.0
+    X = X.transpose(0, 3, 1, 2)  # (N, H, W, C) -> (N, C, H, W)
+
     transform = transforms.Compose([
         transforms.ToTensor(),
     ])
 
-    train_dataset = DermaDataset(npz_path=npz_path, split='train', transform=transform)
-    val_dataset = DermaDataset(npz_path=npz_path, split='val', transform=transform)
+    dataset = DermaDataset(X, y, transform=transform)
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
-    return train_loader, val_loader
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, train_dataset, val_dataset
+
 
 # ✅ Few-shot episodic batch sampler
 class EpisodicBatchSampler(Sampler):
@@ -182,37 +196,31 @@ class EpisodicBatchSampler(Sampler):
             yield batch
 
 # ✅ Few-shot dataloader for episodic training
-def get_few_shot_loaders(npz_path, n_way, k_shot, q_queries, episodes):
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-    ])
+def get_few_shot_loaders(data_path, n_way=5, k_shot=1, q=5, episodes=100):
+    from utils.few_shot_dataset import FewShotDataset
+    from utils.derm_dataset import DermaDataset
 
-    data = np.load(npz_path)
-    train_images = data['train_images']
-    train_labels = data['train_labels'].flatten()
+    data = np.load(data_path)
+    X, y = data['images'], data['labels']
 
-    # build class-wise mapping
-    class_to_indices = {i: [] for i in range(n_way)}
-    for idx, label in enumerate(train_labels):
-        if label in class_to_indices:
-            class_to_indices[label].append(idx)
+    # Normalize and reshape
+    X = X / 255.0
+    X = X.transpose(0, 3, 1, 2)  # (N, H, W, C) -> (N, C, H, W)
 
-    episodes_data = []
-    for _ in range(episodes):
-        support_set = []
-        query_set = []
-        selected_classes = np.random.choice(list(class_to_indices.keys()), n_way, replace=False)
-        for cls in selected_classes:
-            indices = np.random.choice(class_to_indices[cls], k_shot + q_queries, replace=False)
-            support_idx = indices[:k_shot]
-            query_idx = indices[k_shot:]
-            for idx in support_idx:
-                support_set.append((train_images[idx], cls))
-            for idx in query_idx:
-                query_set.append((train_images[idx], cls))
-        episodes_data.append((support_set, query_set))
+    base_dataset = DermaDataset(X, y, transform=None)
 
-    return episodes_data
+    # Create Few-Shot Episodic Dataset
+    train_loader = torch.utils.data.DataLoader(
+        FewShotDataset(base_dataset, n_way=n_way, k_shot=k_shot, q=query, episodes=episodes),
+        batch_size=1
+    )
+
+    val_loader = torch.utils.data.DataLoader(
+        FewShotDataset(base_dataset, n_way=n_way, k_shot=k_shot, q=query, episodes=episodes),
+        batch_size=1
+    )
+
+    return train_loader, val_loader
 
 
 
