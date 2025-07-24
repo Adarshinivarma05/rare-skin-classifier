@@ -2,10 +2,16 @@ import torch
 from models.protopnet_skin_classifier import ProtoPNet
 from utils.data_loader import get_loaders
 from utils.train_utils import eval_epoch
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--model_path', type=str, default='proto_resnet50.pth')
+args = parser.parse_args()
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model  = ProtoPNet().to(device)
-model.load_state_dict(torch.load("best_model.pth"))
+model.load_state_dict(torch.load(args.model_path))
 
 _, _, test_loader, _ = get_loaders(batch_size=32)
 criterion = torch.nn.CrossEntropyLoss()
