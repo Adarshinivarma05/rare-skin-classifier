@@ -128,3 +128,77 @@ def get_few_shot_loaders(n_way, k_shot, q, episodes, root='data/dermamnist', img
     loader = DataLoader(dataset, batch_sampler=sampler, num_workers=2, pin_memory=True)
 
     return loader, loader  # using same loader for train/val for simplicity
+
+
+
+
+
+import os
+import torch
+from torchvision import transforms
+from torch.utils.data import DataLoader, Sampler
+from collections import defaultdict
+import random
+from utils.derm_dataset import DermaDataset
+
+# ✅ Standard dataloader
+def get_loaders(batch_size=32, root='data/dermamnist', img_size=224):
+    transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+
+    train_dataset = DermaDataset(split='train', transform=transform, root=root)
+    val_dataset = DermaDataset(split='val', transform=transform, root=root)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, pin_memory=True)
+    val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+
+    return train_loader, val_loader
+
+# ✅ Few-shot episodic batch sampler
+class EpisodicBatchSampler(Sampler):
+    def __init__(self, labels, n_way, k_shot, q, episodes):
+        self.n_way = n_way
+        self.k_shot = k_shot
+        self.q = q
+        self.episodes = episodes
+        self.class_to_indices = defaultdict(list)
+
+        for idx, label in enumerate(labels):
+            self.class_to_indices[label].append(idx)
+
+        self.classes = list(self.class_to_indices.keys())
+
+    def __len__(self):
+        return self.episodes
+
+    def __iter__(self):
+        for _ in range(self.episodes):
+            batch = []
+            selected_classes = random.sample(self.classes, self.n_way)
+            for cls in selected_classes:
+                indices = random.sample(self.class_to_indices[cls], self.k_shot + self.q)
+                batch.extend(indices)
+            yield batch
+
+# ✅ Few-shot dataloader for episodic training
+def get_few_shot_loaders(n_way, k_shot, q, episodes, root='data/dermamnist', img_size=224):
+    transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+
+    dataset = DermaDataset(root=root, transform=transform)
+    labels = [label for _, label in dataset]
+
+    sampler = EpisodicBatchSampler(labels, n_way, k_shot, q, episodes)
+    loader = DataLoader(dataset, batch_sampler=sampler, num_workers=2, pin_memory=True)
+
+    return loader, loader
