@@ -11,6 +11,8 @@ args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model  = ProtoPNet().to(device)
+model.load_state_dict(torch.load("../best_model.pth"))
+
 model.load_state_dict(torch.load(args.model_path))
 
 _, _, test_loader, _ = get_loaders(batch_size=32)
