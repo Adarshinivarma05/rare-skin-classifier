@@ -68,4 +68,48 @@ def train_epoch(model, loader, criterion, optimizer, scaler, device):
     f1   = f1_score(all_labels, all_preds, average="weighted")
     return loss, acc, f1
 
+def few_shot_train_epoch(model, optimizer, loader, device, criterion, scaler=None):
+    model.train()
+    total_loss = 0.0
+    correct = 0
+    total = 0
+
+    for batch in loader:
+        support_images, support_labels, query_images, query_labels = batch
+
+        support_images = support_images.to(device)
+        support_labels = support_labels.to(device)
+        query_images = query_images.to(device)
+        query_labels = query_labels.to(device)
+
+        optimizer.zero_grad()
+
+        # Combine support and query images to pass through ProtoPNet
+        all_images = torch.cat([support_images, query_images], dim=0)
+        
+        with torch.cuda.amp.autocast(enabled=scaler is not None):
+            outputs = model(all_images)
+
+        # Extract only query outputs for loss calculation
+        query_outputs = outputs[-len(query_labels):]
+        loss = criterion(query_outputs, query_labels)
+
+        if scaler:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
+
+        total_loss += loss.item()
+        _, predicted = query_outputs.max(1)
+        correct += predicted.eq(query_labels).sum().item()
+        total += query_labels.size(0)
+
+    avg_loss = total_loss / len(loader)
+    accuracy = 100. * correct / total
+    return avg_loss, accuracy
+
+
 
