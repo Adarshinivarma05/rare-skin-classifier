@@ -106,3 +106,23 @@ class EpisodicBatchSampler(Sampler):
                 indices = random.sample(self.class_to_indices[cls], self.k_shot + self.q)
                 batch.extend(indices)
             yield batch
+
+from torchvision import transforms
+from utils.derm_dataset import DermaDataset  # adjust if needed
+
+def get_few_shot_loaders(n_way, k_shot, q, episodes, root='data/dermamnist', img_size=224):
+    transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+
+    dataset = DermaDataset(root=root, transform=transform)
+    labels = [label for _, label in dataset]
+
+    sampler = EpisodicBatchSampler(labels, n_way, k_shot, q, episodes)
+    loader = DataLoader(dataset, batch_sampler=sampler, num_workers=2, pin_memory=True)
+
+    return loader, loader  # using same loader for train/val for simplicity
