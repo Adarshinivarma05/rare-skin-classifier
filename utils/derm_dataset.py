@@ -1,23 +1,29 @@
-import os
-import pandas as pd
-from PIL import Image
+import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 class DermaDataset(Dataset):
-    def __init__(self, root='data/dermamnist', split='train', transform=None):
-        self.root = root
-        self.split = split
+    def __init__(self, npz_path, split='train', transform=None):
+        data = np.load(npz_path)
+
+        if split == 'train':
+            self.images = data['train_images']
+            self.labels = data['train_labels']
+        elif split == 'val':
+            self.images = data['val_images']
+            self.labels = data['val_labels']
+        else:
+            self.images = data['test_images']
+            self.labels = data['test_labels']
+
         self.transform = transform
-        self.data = pd.read_csv(os.path.join(root, f'{split}.csv'))  # Expects train.csv, val.csv, etc.
 
     def __len__(self):
-        return len(self.data)
+        return len(self.images)
 
     def __getitem__(self, idx):
-        row = self.data.iloc[idx]
-        img_path = os.path.join(self.root, row['image'])  # column must be named 'image'
-        image = Image.open(img_path).convert('RGB')
-        label = int(row['label'])  # column must be named 'label'
+        image = self.images[idx]
+        label = self.labels[idx].item()
 
         if self.transform:
             image = self.transform(image)
