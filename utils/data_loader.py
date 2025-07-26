@@ -8,14 +8,34 @@ import random
 from utils.derm_dataset import DermaDataset
 from utils.few_shot_dataset import FewShotDataset
 
-# ✅ Standard data loader for normal training
+# ✅ Check if file exists
+def _verify_npz(data_path):
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"❌ .npz file not found at {data_path}")
+    
+    data = np.load(data_path)
+    required_keys = ['train_images', 'val_images', 'train_labels', 'val_labels']
+    for key in required_keys:
+        if key not in data:
+            raise KeyError(f"❌ Key '{key}' missing in {data_path}")
+    return data
+
+# ✅ Standard data loader for base training
 def get_loaders(data_path='data/dermamnist/dermamnist.npz', batch_size=16, img_size=224):
+    data = _verify_npz(data_path)
+
+    # Auto detect channels to apply normalization
+    channels = data['train_images'].shape[-1] if len(data['train_images'].shape) == 4 else 1
+    if channels == 1:
+        normalize = transforms.Normalize([0.5], [0.5])
+    else:
+        normalize = transforms.Normalize([0.485, 0.456, 0.406],
+                                         [0.229, 0.224, 0.225])
+
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((img_size, img_size)),
-        transforms.Normalize([0.5], [0.5]) if np.load(data_path)['train_images'].shape[-1] == 1 else
-        transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225])
+        normalize
     ])
 
     train_dataset = DermaDataset(npz_path=data_path, split='train', transform=transform)
@@ -26,7 +46,7 @@ def get_loaders(data_path='data/dermamnist/dermamnist.npz', batch_size=16, img_s
 
     return train_loader, val_loader, train_dataset, val_dataset
 
-# ✅ Episodic batch sampler for few-shot
+# ✅ Episodic sampler for few-shot learning
 class EpisodicBatchSampler(Sampler):
     def __init__(self, labels, n_way, k_shot, q, episodes):
         self.n_way = n_way
@@ -52,18 +72,23 @@ class EpisodicBatchSampler(Sampler):
                 batch.extend(indices)
             yield batch
 
-# ✅ Few-shot episodic loaders
+# ✅ Few-shot loader using FewShotDataset wrapper
 def get_few_shot_loaders(data_path='data/dermamnist/dermamnist.npz', n_way=5, k_shot=5, q=5, episodes=100, img_size=224):
+    data = _verify_npz(data_path)
+
+    channels = data['train_images'].shape[-1] if len(data['train_images'].shape) == 4 else 1
+    if channels == 1:
+        normalize = transforms.Normalize([0.5], [0.5])
+    else:
+        normalize = transforms.Normalize([0.485, 0.456, 0.406],
+                                         [0.229, 0.224, 0.225])
+
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((img_size, img_size)),
-        transforms.Normalize([0.5], [0.5]) if np.load(data_path)['train_images'].shape[-1] == 1 else
-        transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225])
+        normalize
     ])
 
-    # Load .npz
-    data = np.load(data_path)
     train_data = {
         'images': data['train_images'],
         'labels': data['train_labels']
