@@ -13,7 +13,7 @@ def _verify_npz(data_path):
     if not os.path.exists(data_path):
         raise FileNotFoundError(f"❌ .npz file not found at {data_path}")
     
-    data = np.load(data_path)
+    data = np.load(data_path, allow_pickle=True)
     required_keys = ['train_images', 'val_images', 'train_labels', 'val_labels']
     for key in required_keys:
         if key not in data:
