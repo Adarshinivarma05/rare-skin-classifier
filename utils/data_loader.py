@@ -10,7 +10,7 @@ from utils.few_shot_dataset import FewShotDataset
 
 # ✅ Check if file exists
 def _verify_npz(data_path):
-    if not os.path.exists(data_path):
+    if not os.path.exists(data_path, allow_pickle=True):
         raise FileNotFoundError(f"❌ .npz file not found at {data_path}")
     
     data = np.load(data_path, allow_pickle=True)
